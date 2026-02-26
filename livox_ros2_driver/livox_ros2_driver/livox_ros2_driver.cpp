@@ -84,6 +84,8 @@ LivoxDriver::LivoxDriver(const rclcpp::NodeOptions & node_options)
   double publish_freq = 10.0; /* Hz */
   int output_type = kOutputToRos;
   std::string frame_id;
+  std::string pointcloud_topic;
+  std::string imu_topic;
 
   this->declare_parameter("xfer_format", xfer_format);
   this->declare_parameter("multi_topic", 0);
@@ -91,6 +93,8 @@ LivoxDriver::LivoxDriver(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("publish_freq", 10.0);
   this->declare_parameter("output_data_type", output_type);
   this->declare_parameter("frame_id", "frame_default");
+  this->declare_parameter("pointcloud_topic", "livox/lidar");
+  this->declare_parameter("imu_topic", "livox/imu");
   this->declare_parameter("user_config_path", "path_default");
   this->declare_parameter("cmdline_input_bd_code", "000000000000001");
   this->declare_parameter("lvx_file_path", "/home/livox/livox_test.lvx");
@@ -101,6 +105,8 @@ LivoxDriver::LivoxDriver(const rclcpp::NodeOptions & node_options)
   this->get_parameter("publish_freq", publish_freq);
   this->get_parameter("output_data_type", output_type);
   this->get_parameter("frame_id", frame_id);
+  this->get_parameter("pointcloud_topic", pointcloud_topic);
+  this->get_parameter("imu_topic", imu_topic);
   if (publish_freq > 100.0) {
     publish_freq = 100.0;
   } else if (publish_freq < 0.1) {
@@ -113,7 +119,8 @@ LivoxDriver::LivoxDriver(const rclcpp::NodeOptions & node_options)
 
   /** Lidar data distribute control and lidar data source set */
   lddc_ptr_ =
-    std::make_unique<Lddc>(xfer_format, multi_topic, data_src, output_type, publish_freq, frame_id);
+    std::make_unique<Lddc>(xfer_format, multi_topic, data_src, output_type, publish_freq,
+      frame_id, pointcloud_topic, imu_topic);
   lddc_ptr_->SetRosNode(this);
 
   int ret = 0;

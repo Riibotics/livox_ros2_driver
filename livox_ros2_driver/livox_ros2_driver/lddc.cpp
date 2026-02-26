@@ -42,13 +42,16 @@ namespace livox_ros {
 
 /** Lidar Data Distribute Control--------------------------------------------*/
 Lddc::Lddc(int format, int multi_topic, int data_src, int output_type,
-           double frq, std::string &frame_id)
+           double frq, std::string &frame_id, std::string &pointcloud_topic,
+           std::string &imu_topic)
     : transfer_format_(format),
       use_multi_topic_(multi_topic),
       data_src_(data_src),
       output_type_(output_type),
       publish_frq_(frq),
-      frame_id_(frame_id) {
+      frame_id_(frame_id),
+      pointcloud_topic_(pointcloud_topic),
+      imu_topic_(imu_topic) {
   publish_period_ns_ = kNsPerSecond / publish_frq_;
   lds_ = nullptr;
 #if 0
@@ -614,9 +617,9 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentPublisher(uint8_t handle)
   uint32_t queue_size = kMinEthPacketQueueSize;
   if (use_multi_topic_) {
     if (!private_pub_[handle]) {
-      char name_str[48];
+      char name_str[128];
       memset(name_str, 0, sizeof(name_str));
-      snprintf(name_str, sizeof(name_str), "livox/lidar_%s",
+      snprintf(name_str, sizeof(name_str), "%s_%s", pointcloud_topic_.c_str(),
           lds_->lidars_[handle].info.broadcast_code);
       std::string topic_name(name_str);
       queue_size = queue_size * 2; // queue size is 64 for only one lidar
@@ -626,7 +629,7 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentPublisher(uint8_t handle)
     return private_pub_[handle];
   } else {
     if (!global_pub_) {
-      std::string topic_name("livox/lidar");
+      std::string topic_name(pointcloud_topic_);
       queue_size = queue_size * 8; // shared queue size is 256, for all lidars
       global_pub_ = CreatePublisher(transfer_format_, topic_name, queue_size);
     }
@@ -638,9 +641,9 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentImuPublisher(uint8_t hand
   uint32_t queue_size = kMinEthPacketQueueSize;
   if (use_multi_topic_) {
     if (!private_imu_pub_[handle]) {
-      char name_str[48];
+      char name_str[128];
       memset(name_str, 0, sizeof(name_str));
-      snprintf(name_str, sizeof(name_str), "livox/imu_%s",
+      snprintf(name_str, sizeof(name_str), "%s_%s", imu_topic_.c_str(),
           lds_->lidars_[handle].info.broadcast_code);
       std::string topic_name(name_str);
       queue_size = queue_size * 2; // queue size is 64 for only one lidar
@@ -650,7 +653,7 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentImuPublisher(uint8_t hand
     return private_imu_pub_[handle];
   } else {
     if (!global_imu_pub_) {
-      std::string topic_name("livox/imu");
+      std::string topic_name(imu_topic_);
       queue_size = queue_size * 8; // shared queue size is 256, for all lidars
       global_imu_pub_ = CreatePublisher(kLivoxImuMsg, topic_name, queue_size);
     }

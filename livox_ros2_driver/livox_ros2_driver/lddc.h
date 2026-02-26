@@ -57,7 +57,8 @@ typedef enum {
 class Lddc {
  public:
   Lddc(int format, int multi_topic, int data_src, int output_type, double frq,
-       std::string &frame_id);
+       std::string &frame_id, std::string &pointcloud_topic,
+       std::string &imu_topic);
   ~Lddc();
 
   int RegisterLds(Lds *lds);
@@ -104,6 +105,8 @@ class Lddc {
   double publish_frq_;
   uint32_t publish_period_ns_;
   std::string frame_id_;
+  std::string pointcloud_topic_;
+  std::string imu_topic_;
 
   std::shared_ptr<rclcpp::PublisherBase>private_pub_[kMaxSourceLidar];
   std::shared_ptr<rclcpp::PublisherBase>global_pub_;

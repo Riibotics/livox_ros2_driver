@@ -9,8 +9,10 @@ xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud forma
 multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
 data_src      = 1    # 0-lidar,1-hub
 publish_freq  = 10.0 # freqency of publish,1.0,2.0,5.0,10.0,etc
-output_type   = 0    
+output_type   = 0
 frame_id      = 'livox_frame'
+pointcloud_topic = 'livox/lidar'
+imu_topic        = 'livox/imu'
 lvx_file_path = '/home/livox/livox_test.lvx'
 cmdline_bd_code = 'livox0000000001'
 
@@ -27,6 +29,8 @@ livox_ros2_params = [
     {"publish_freq": publish_freq},
     {"output_data_type": output_type},
     {"frame_id": frame_id},
+    {"pointcloud_topic": pointcloud_topic},
+    {"imu_topic": imu_topic},
     {"lvx_file_path": lvx_file_path},
     {"user_config_path": user_config_path},
     {"cmdline_input_bd_code": cmdline_bd_code}
