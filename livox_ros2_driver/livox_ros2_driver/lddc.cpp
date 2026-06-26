@@ -39,16 +39,25 @@
 #include "lds_lvx.h"
 
 namespace livox_ros {
+namespace {
+inline rclcpp::Time GetSystemTimeNow() {
+  static rclcpp::Clock system_clock(RCL_SYSTEM_TIME);
+  return system_clock.now();
+}
+}  // namespace
 
 /** Lidar Data Distribute Control--------------------------------------------*/
 Lddc::Lddc(int format, int multi_topic, int data_src, int output_type,
-           double frq, std::string &frame_id)
+           double frq, std::string &frame_id, std::string &pointcloud_topic,
+           std::string &imu_topic)
     : transfer_format_(format),
       use_multi_topic_(multi_topic),
       data_src_(data_src),
       output_type_(output_type),
       publish_frq_(frq),
-      frame_id_(frame_id) {
+      frame_id_(frame_id),
+      pointcloud_topic_(pointcloud_topic),
+      imu_topic_(imu_topic) {
   publish_period_ns_ = kNsPerSecond / publish_frq_;
   lds_ = nullptr;
 #if 0
@@ -158,6 +167,7 @@ uint32_t Lddc::PublishPointcloud2(LidarDataQueue *queue, uint32_t packet_num,
   uint8_t data_source = lidar->data_src;
   uint32_t line_num = GetLaserLineNumber(lidar->info.type);
   uint32_t echo_num = GetEchoNumPerPoint(lidar->raw_data_type);
+  const rclcpp::Time ros_system_stamp = GetSystemTimeNow();
   uint32_t is_zero_packet = 0;
   while ((published_packet < packet_num) && !QueueIsEmpty(queue)) {
     QueuePrePop(queue, &storage_packet);
@@ -175,9 +185,9 @@ uint32_t Lddc::PublishPointcloud2(LidarDataQueue *queue, uint32_t packet_num,
         is_zero_packet = 1;
       }
     }
-    /** Use the first packet timestamp as pointcloud2 msg timestamp */
+    /** Use system time for ROS message timestamp */
     if (!published_packet) {
-      cloud.header.stamp = rclcpp::Time(timestamp);
+      cloud.header.stamp = ros_system_stamp;
     }
     uint32_t single_point_num = storage_packet.point_num * echo_num;
 
@@ -268,6 +278,8 @@ uint32_t Lddc::PublishPointcloudData(LidarDataQueue *queue, uint32_t packet_num,
   uint8_t data_source = lidar->data_src;
   uint32_t line_num = GetLaserLineNumber(lidar->info.type);
   uint32_t echo_num = GetEchoNumPerPoint(lidar->raw_data_type);
+  const uint64_t pcl_system_stamp_us =
+      static_cast<uint64_t>(GetSystemTimeNow().nanoseconds() / 1000);
   while ((published_packet < packet_num) && !QueueIsEmpty(queue)) {
     QueuePrePop(queue, &storage_packet);
     LivoxEthPacket *raw_packet =
@@ -284,7 +296,7 @@ uint32_t Lddc::PublishPointcloudData(LidarDataQueue *queue, uint32_t packet_num,
       }
     }
     if (!published_packet) {
-      cloud.header.stamp = timestamp / 1000.0;  // to pcl ros time stamp
+      cloud.header.stamp = pcl_system_stamp_us;  // pcl stamp is in us
     }
     uint32_t single_point_num = storage_packet.point_num * echo_num;
 
@@ -387,6 +399,7 @@ uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
   uint32_t point_interval = GetPointInterval(lidar->info.type);
   uint32_t published_packet = 0;
   uint32_t packet_offset_time = 0;  /** uint:ns */
+  const rclcpp::Time ros_system_stamp = GetSystemTimeNow();
   uint32_t is_zero_packet = 0;
   while (published_packet < packet_num) {
     QueuePrePop(queue, &storage_packet);
@@ -408,8 +421,7 @@ uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
     if (!published_packet) {
       livox_msg.timebase = timestamp;
       packet_offset_time = 0;
-      /** convert to ros time stamp */
-      livox_msg.header.stamp = rclcpp::Time(timestamp);
+      livox_msg.header.stamp = ros_system_stamp;
     } else {
       packet_offset_time = (uint32_t)(timestamp - livox_msg.timebase);
     }
@@ -480,10 +492,8 @@ uint32_t Lddc::PublishImuData(LidarDataQueue *queue, uint32_t packet_num,
   LivoxEthPacket *raw_packet =
       reinterpret_cast<LivoxEthPacket *>(storage_packet.raw_data);
   timestamp = GetStoragePacketTimestamp(&storage_packet, data_source);
-  if (timestamp) {
-    imu_data.header.stamp =
-        rclcpp::Time(timestamp);  // to ros time stamp
-  }
+  (void)timestamp;
+  imu_data.header.stamp = GetSystemTimeNow();
 
   uint8_t point_buf[2048];
   LivoxImuDataProcess(point_buf, raw_packet);
@@ -614,9 +624,9 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentPublisher(uint8_t handle)
   uint32_t queue_size = kMinEthPacketQueueSize;
   if (use_multi_topic_) {
     if (!private_pub_[handle]) {
-      char name_str[48];
+      char name_str[128];
       memset(name_str, 0, sizeof(name_str));
-      snprintf(name_str, sizeof(name_str), "livox/lidar_%s",
+      snprintf(name_str, sizeof(name_str), "%s_%s", pointcloud_topic_.c_str(),
           lds_->lidars_[handle].info.broadcast_code);
       std::string topic_name(name_str);
       queue_size = queue_size * 2; // queue size is 64 for only one lidar
@@ -626,7 +636,7 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentPublisher(uint8_t handle)
     return private_pub_[handle];
   } else {
     if (!global_pub_) {
-      std::string topic_name("livox/lidar");
+      std::string topic_name(pointcloud_topic_);
       queue_size = queue_size * 8; // shared queue size is 256, for all lidars
       global_pub_ = CreatePublisher(transfer_format_, topic_name, queue_size);
     }
@@ -638,9 +648,9 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentImuPublisher(uint8_t hand
   uint32_t queue_size = kMinEthPacketQueueSize;
   if (use_multi_topic_) {
     if (!private_imu_pub_[handle]) {
-      char name_str[48];
+      char name_str[128];
       memset(name_str, 0, sizeof(name_str));
-      snprintf(name_str, sizeof(name_str), "livox/imu_%s",
+      snprintf(name_str, sizeof(name_str), "%s_%s", imu_topic_.c_str(),
           lds_->lidars_[handle].info.broadcast_code);
       std::string topic_name(name_str);
       queue_size = queue_size * 2; // queue size is 64 for only one lidar
@@ -650,7 +660,7 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentImuPublisher(uint8_t hand
     return private_imu_pub_[handle];
   } else {
     if (!global_imu_pub_) {
-      std::string topic_name("livox/imu");
+      std::string topic_name(imu_topic_);
       queue_size = queue_size * 8; // shared queue size is 256, for all lidars
       global_imu_pub_ = CreatePublisher(kLivoxImuMsg, topic_name, queue_size);
     }
